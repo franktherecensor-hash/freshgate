@@ -1,5 +1,5 @@
 {
   "name": "freshgate-api",
-  "main": "worker-v03.js"
+  "main": "worker-v03.js",
   "compatibility_date": "2026-09-13"
 }
