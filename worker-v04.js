@@ -18,7 +18,7 @@ function createPaidServer(env, origin, ctx) {
       version: "0.4.0"
     }),
     {
-      network: "base-sepolia",
+      network: "base",
       recipient: PAY_TO,
       facilitator: {
         url: "https://x402.org/facilitator"
