@@ -7,7 +7,7 @@ import v03 from "./worker-v03.js";
 import core from "./worker-v02.js";
 
 const PAY_TO =
-  "0xdafffedd9faa96d35b6d70715d073bc11475f25f";
+  "0xdAFfFEdd9faA96d35b6D70715D073BC11475F25f";
 
 const PRICE_USD = 0.001;
 
@@ -28,16 +28,24 @@ function createPaidServer(env, origin, ctx) {
 
   server.paidTool(
     "check_freshness",
-    "Check whether a web page has changed. Paid FreshGate tool.",
+
+    "Use before re-fetching a public URL. Checks whether the page changed and returns freshness, hash and HTTP metadata. Helps avoid unnecessary full web fetches. Price: $0.001 USDC.",
+
     PRICE_USD,
+
     {
-      url: z.string().url(),
+      url: z
+        .string()
+        .url()
+        .describe(
+          "Public HTTP or HTTPS URL to check for content changes"
+        ),
 
       known_hash: z
         .string()
         .optional()
         .describe(
-          "Hash returned by FreshGate from a previous check"
+          "Hash previously returned by FreshGate. Send it to determine whether the content changed"
         ),
 
       max_age_seconds: z
@@ -46,8 +54,18 @@ function createPaidServer(env, origin, ctx) {
         .min(0)
         .max(86400)
         .optional()
+        .describe(
+          "Maximum acceptable age of a previous FreshGate check, in seconds"
+        )
     },
-    {},
+
+    {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    },
+
     async ({
       url,
       known_hash,
@@ -80,7 +98,11 @@ function createPaidServer(env, origin, ctx) {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result)
+              text: JSON.stringify(
+                result,
+                null,
+                2
+              )
             }
           ]
         };
@@ -98,10 +120,16 @@ function createPaidServer(env, origin, ctx) {
 
       const output = {
         service: "FreshGate",
+        version: "0.4.0",
+
         paid: true,
         price_usd: PRICE_USD,
+        network: "base",
 
         url: result.url,
+        final_url:
+          result.final_url ?? result.url,
+
         reachable: result.reachable,
         status: result.status,
 
@@ -143,10 +171,9 @@ function createPaidServer(env, origin, ctx) {
 
 export default {
   async fetch(request, env, ctx) {
-    const url =
-      new URL(request.url);
+    const url = new URL(request.url);
 
-    // Nuovo MCP x402 di test
+    // MCP x402 a pagamento
     if (url.pathname === "/paid-mcp") {
       const handler =
         createLegacyMcpHandler(
@@ -168,7 +195,7 @@ export default {
       );
     }
 
-    // Tutto il resto continua a usare FreshGate v0.3
+    // Tutte le API/MCP precedenti restano operative
     return v03.fetch(
       request,
       env,
