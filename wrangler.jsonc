@@ -1,6 +1,6 @@
 {
   "name": "freshgate-api",
-  "main": "worker-v04.js",
+  "main": "worker-v05.js",
   "compatibility_date": "2026-09-13",
   "d1_databases": [
     {
