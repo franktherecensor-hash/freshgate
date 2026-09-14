@@ -4,6 +4,9 @@
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@x402/core": "2.25.0",
+    "@x402/evm": "2.25.0",
     "agents": "0.23.0",
     "zod": "4.6.2"
   }
