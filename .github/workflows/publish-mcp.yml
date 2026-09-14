@@ -24,3 +24,8 @@ jobs:
 
       - name: Publish FreshGate
         run: ./mcp-publisher publish
+
+- name: Validate FreshGate
+  run: |
+    cat server.json
+    ./mcp-publisher validate server.json
