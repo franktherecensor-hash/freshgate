@@ -1,0 +1,50 @@
+name: Test FreshGate MCP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Find FreshGate in MCP Registry
+        run: |
+          curl -fsSL \
+            "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.franktherecensor-hash%2Ffreshgate" \
+            -o registry.json
+
+          cat registry.json
+
+          MCP_URL=$(jq -r '.servers[0].server.remotes[0].url' registry.json)
+
+          if [ -z "$MCP_URL" ] || [ "$MCP_URL" = "null" ]; then
+            echo "FreshGate not found in Registry"
+            exit 1
+          fi
+
+          echo "MCP_URL=$MCP_URL" >> "$GITHUB_ENV"
+          echo "FreshGate found: $MCP_URL"
+
+      - name: List FreshGate tools
+        run: |
+          npx -y @modelcontextprotocol/inspector@latest \
+            --cli "$MCP_URL" \
+            --transport http \
+            --method tools/list \
+            --format json
+
+      - name: Call check_freshness
+        run: |
+          npx -y @modelcontextprotocol/inspector@latest \
+            --cli "$MCP_URL" \
+            --transport http \
+            --method tools/call \
+            --tool-name check_freshness \
+            --tool-args-json '{"url":"https://example.com","max_age_seconds":0}' \
+            --format json
