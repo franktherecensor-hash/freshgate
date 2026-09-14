@@ -1,0 +1,47 @@
+name: Test FreshGate x402
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: List paid MCP tools
+        run: |
+          npx -y @modelcontextprotocol/inspector@latest \
+            --cli "https://freshgate-api.franktherecensor.workers.dev/paid-mcp" \
+            --transport http \
+            --method tools/list \
+            --format json
+
+      - name: Call paid tool without payment
+        shell: bash
+        run: |
+          set +e
+
+          OUTPUT=$(npx -y @modelcontextprotocol/inspector@latest \
+            --cli "https://freshgate-api.franktherecensor.workers.dev/paid-mcp" \
+            --transport http \
+            --method tools/call \
+            --tool-name check_freshness \
+            --tool-args-json '{"url":"https://example.com","max_age_seconds":0}' \
+            --format json 2>&1)
+
+          CODE=$?
+
+          echo "$OUTPUT"
+
+          if echo "$OUTPUT" | grep -Eqi '402|payment|required|x402'; then
+            echo "FreshGate x402 challenge detected successfully."
+            exit 0
+          fi
+
+          echo "Expected x402 payment challenge was not detected."
+          exit $CODE
