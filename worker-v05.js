@@ -58,9 +58,6 @@ const app = new Hono();
 
 // --------------------------------------------------
 // X402 PAYMENT WALL
-// IMPORTANT:
-// questo middleware viene applicato PRIMA
-// dell'esecuzione di /api/check-freshness
 // --------------------------------------------------
 
 const paidRoutes = {
@@ -78,7 +75,18 @@ const paidRoutes = {
       "Check whether a public web page has changed before fetching it again.",
 
     mimeType:
-      "application/json"
+      "application/json",
+
+    serviceName:
+      "FreshGate",
+
+    tags: [
+      "web",
+      "freshness",
+      "change-detection",
+      "url-monitoring",
+      "ai-agents"
+    ]
   }
 };
 
@@ -103,7 +111,7 @@ app.get(
 
       info: {
         title: "FreshGate",
-        version: "0.5.1",
+        version: "0.5.2",
 
         description:
           "Pay-per-call web freshness API for AI agents.",
@@ -135,6 +143,14 @@ app.get(
 
             description:
               "Use before re-fetching a public URL. Returns HTTP status, content hash, change state and freshness metadata. Costs $0.001 USDC.",
+
+            tags: [
+              "web",
+              "freshness",
+              "change-detection",
+              "url-monitoring",
+              "ai-agents"
+            ],
 
             parameters: [
               {
@@ -285,8 +301,19 @@ app.get(
 
           method: "GET",
 
+          serviceName:
+            "FreshGate",
+
           description:
             "Check whether a public web page has changed.",
+
+          tags: [
+            "web",
+            "freshness",
+            "change-detection",
+            "url-monitoring",
+            "ai-agents"
+          ],
 
           price: "$0.001",
 
@@ -304,8 +331,6 @@ app.get(
 
 // --------------------------------------------------
 // PAID API
-// Questa funzione viene eseguita SOLO DOPO
-// che il middleware x402 ha autorizzato la richiesta
 // --------------------------------------------------
 
 app.get(
@@ -386,7 +411,7 @@ app.get(
           "FreshGate",
 
         version:
-          "0.5.1",
+          "0.5.2",
 
         paid:
           true,
@@ -439,8 +464,6 @@ export default {
       );
     }
 
-    // Tutto ciò che già funzionava
-    // continua a passare alla v0.4
     return v04.fetch(
       request,
       env,
