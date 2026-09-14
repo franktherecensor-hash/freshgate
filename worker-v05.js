@@ -1,16 +1,17 @@
 import { Hono } from "hono";
+
 import {
   paymentMiddleware,
   x402ResourceServer
 } from "@x402/hono";
 
 import {
-  HTTPFacilitatorClient
-} from "@x402/core/server";
+  ExactEvmScheme
+} from "@x402/evm/exact/server";
 
 import {
-  registerExactEvmScheme
-} from "@x402/evm/exact/server";
+  HTTPFacilitatorClient
+} from "@x402/core/server";
 
 import v04 from "./worker-v04.js";
 import core from "./worker-v02.js";
@@ -23,52 +24,76 @@ const PRICE_USD = "0.001";
 const ORIGIN =
   "https://freshgate-api.franktherecensor.workers.dev";
 
+const NETWORK =
+  "eip155:8453";
+
 const BASE_USDC =
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
+
+// --------------------------------------------------
+// X402 PRODUCTION FACILITATOR
+// --------------------------------------------------
+
 const facilitatorClient =
   new HTTPFacilitatorClient({
-    url: "https://x402.org/facilitator"
+    url: "https://facilitator.payai.network"
   });
 
 const resourceServer =
   new x402ResourceServer(
     facilitatorClient
+  ).register(
+    NETWORK,
+    new ExactEvmScheme()
   );
 
-registerExactEvmScheme(
-  resourceServer
-);
+
+// --------------------------------------------------
+// HONO APP
+// --------------------------------------------------
 
 const app = new Hono();
 
-app.use(
-  paymentMiddleware(
-    {
-      "GET /api/check-freshness": {
-        accepts: [
-          {
-            scheme: "exact",
-            price: "$0.001",
-            network: "eip155:8453",
-            payTo: PAY_TO
-          }
-        ],
 
-        description:
-          "Check whether a public web page has changed before fetching it again.",
+// --------------------------------------------------
+// X402 PAYMENT WALL
+// IMPORTANT:
+// questo middleware viene applicato PRIMA
+// dell'esecuzione di /api/check-freshness
+// --------------------------------------------------
 
-        mimeType:
-          "application/json"
+const paidRoutes = {
+  "GET /api/check-freshness": {
+    accepts: [
+      {
+        scheme: "exact",
+        price: "$0.001",
+        network: NETWORK,
+        payTo: PAY_TO
       }
-    },
+    ],
 
+    description:
+      "Check whether a public web page has changed before fetching it again.",
+
+    mimeType:
+      "application/json"
+  }
+};
+
+app.use(
+  "/api/check-freshness",
+  paymentMiddleware(
+    paidRoutes,
     resourceServer
   )
 );
 
 
-// ---------- OPENAPI DISCOVERY ----------
+// --------------------------------------------------
+// OPENAPI
+// --------------------------------------------------
 
 app.get(
   "/openapi.json",
@@ -78,7 +103,7 @@ app.get(
 
       info: {
         title: "FreshGate",
-        version: "0.5.0",
+        version: "0.5.1",
 
         description:
           "Pay-per-call web freshness API for AI agents.",
@@ -109,7 +134,7 @@ app.get(
               "Check whether a web page changed",
 
             description:
-              "Use before re-fetching a public URL. Returns page status, content hash, change state and FreshGate metadata.",
+              "Use before re-fetching a public URL. Returns HTTP status, content hash, change state and freshness metadata. Costs $0.001 USDC.",
 
             parameters: [
               {
@@ -123,7 +148,10 @@ app.get(
                 schema: {
                   type: "string",
                   format: "uri"
-                }
+                },
+
+                example:
+                  "https://example.com"
               },
 
               {
@@ -157,7 +185,8 @@ app.get(
               },
 
               scheme: "exact",
-              network: "eip155:8453",
+
+              network: NETWORK,
 
               amount: "1000",
 
@@ -184,6 +213,14 @@ app.get(
                       type: "object",
 
                       properties: {
+                        service: {
+                          type: "string"
+                        },
+
+                        version: {
+                          type: "string"
+                        },
+
                         url: {
                           type: "string"
                         },
@@ -231,27 +268,45 @@ app.get(
 );
 
 
-// ---------- X402 COMPATIBILITY DISCOVERY ----------
+// --------------------------------------------------
+// X402 DISCOVERY
+// --------------------------------------------------
 
 app.get(
   "/.well-known/x402",
   (c) => {
     return c.json({
-      version: 1,
+      version: 2,
 
       resources: [
-        `${ORIGIN}/api/check-freshness`
-      ],
+        {
+          url:
+            `${ORIGIN}/api/check-freshness`,
 
-      ownershipProofs: [
-        PAY_TO
+          method: "GET",
+
+          description:
+            "Check whether a public web page has changed.",
+
+          price: "$0.001",
+
+          currency: "USDC",
+
+          network: NETWORK,
+
+          payTo: PAY_TO
+        }
       ]
     });
   }
 );
 
 
-// ---------- PAID HTTP API ----------
+// --------------------------------------------------
+// PAID API
+// Questa funzione viene eseguita SOLO DOPO
+// che il middleware x402 ha autorizzato la richiesta
+// --------------------------------------------------
 
 app.get(
   "/api/check-freshness",
@@ -276,13 +331,16 @@ app.get(
     let parsed;
 
     try {
-      parsed = new URL(target);
+      parsed =
+        new URL(target);
 
       if (
         parsed.protocol !== "http:" &&
         parsed.protocol !== "https:"
       ) {
-        throw new Error();
+        throw new Error(
+          "Invalid protocol"
+        );
       }
     } catch {
       return c.json(
@@ -324,22 +382,33 @@ app.get(
 
     return c.json(
       {
-        service: "FreshGate",
-        version: "0.5.0",
+        service:
+          "FreshGate",
 
-        paid: true,
-        price_usdc: 0.001,
-        network: "base",
+        version:
+          "0.5.1",
+
+        paid:
+          true,
+
+        price_usdc:
+          0.001,
+
+        network:
+          "base",
 
         ...result
       },
+
       response.status
     );
   }
 );
 
 
-// ---------- WORKER ----------
+// --------------------------------------------------
+// MAIN WORKER
+// --------------------------------------------------
 
 export default {
   async fetch(
@@ -349,7 +418,9 @@ export default {
   ) {
 
     const url =
-      new URL(request.url);
+      new URL(
+        request.url
+      );
 
     if (
       url.pathname ===
@@ -368,8 +439,8 @@ export default {
       );
     }
 
-    // Tutto ciò che già funziona
-    // resta gestito dalla v0.4
+    // Tutto ciò che già funzionava
+    // continua a passare alla v0.4
     return v04.fetch(
       request,
       env,
