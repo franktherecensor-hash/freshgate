@@ -22,10 +22,10 @@ jobs:
       - name: Login to MCP Registry
         run: ./mcp-publisher login github-oidc
 
+      - name: Validate FreshGate
+        run: |
+          cat server.json
+          ./mcp-publisher validate server.json
+
       - name: Publish FreshGate
         run: ./mcp-publisher publish
-
-- name: Validate FreshGate
-  run: |
-    cat server.json
-    ./mcp-publisher validate server.json
