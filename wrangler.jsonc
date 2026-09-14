@@ -1,5 +1,12 @@
 {
   "name": "freshgate-api",
   "main": "worker-v03.js",
-  "compatibility_date": "2026-09-13"
+  "compatibility_date": "2026-09-13",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dbfresh",
+      "database_id": "7e390325-db8c-433b-a984-ad51448464ca"
+    }
+  ]
 }
