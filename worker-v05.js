@@ -14,16 +14,24 @@ import {
 } from "@x402/evm/exact/server";
 
 import {
-  declareDiscoveryExtension
+  declareDiscoveryExtension,
+  bazaarResourceServerExtension
 } from "@x402/extensions/bazaar";
+
+import {
+  facilitator
+} from "@payai/facilitator";
 
 import v04 from "./worker-v04.js";
 import core from "./worker-v02.js";
 
+
+// ==================================================
+// FRESHGATE CONFIG
+// ==================================================
+
 const PAY_TO =
   "0xdAFfFEdd9faA96d35b6D70715D073BC11475F25f";
-
-const PRICE_USD = "0.001";
 
 const ORIGIN =
   "https://freshgate-api.franktherecensor.workers.dev";
@@ -31,13 +39,11 @@ const ORIGIN =
 const NETWORK =
   "eip155:8453";
 
-const BASE_USDC =
-  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-
-const FACILITATOR_URL =
-  "https://facilitator.payai.network";
+const PRICE =
+  "$0.001";
 
 const TAGS = [
+  "utility",
   "web",
   "freshness",
   "change-detection",
@@ -46,27 +52,44 @@ const TAGS = [
 ];
 
 
-// --------------------------------------------------
-// FACILITATOR + BASE MAINNET
-// --------------------------------------------------
+// ==================================================
+// PAYAI FACILITATOR
+// ==================================================
 
 const facilitatorClient =
-  new HTTPFacilitatorClient({
-    url: FACILITATOR_URL
-  });
+  new HTTPFacilitatorClient(
+    facilitator
+  );
+
+
+// ==================================================
+// X402 RESOURCE SERVER
+// ==================================================
 
 const resourceServer =
   new x402ResourceServer(
     facilitatorClient
-  ).register(
-    NETWORK,
-    new ExactEvmScheme()
-  );
+  )
+    .register(
+      NETWORK,
+      new ExactEvmScheme()
+    )
+    .registerExtension(
+      bazaarResourceServerExtension
+    );
 
 
-// --------------------------------------------------
-// BAZAAR DISCOVERY
-// --------------------------------------------------
+// ==================================================
+// HONO
+// ==================================================
+
+const app =
+  new Hono();
+
+
+// ==================================================
+// BAZAAR DISCOVERY METADATA
+// ==================================================
 
 const bazaarDiscovery =
   declareDiscoveryExtension({
@@ -80,6 +103,7 @@ const bazaarDiscovery =
     },
 
     inputSchema: {
+
       type:
         "object",
 
@@ -93,7 +117,7 @@ const bazaarDiscovery =
             "uri",
 
           description:
-            "Public HTTP or HTTPS URL whose content freshness should be checked"
+            "Public HTTP or HTTPS URL whose freshness should be checked"
         },
 
         ttl: {
@@ -107,7 +131,7 @@ const bazaarDiscovery =
             86400,
 
           description:
-            "Maximum acceptable age of a previous FreshGate check in seconds"
+            "Maximum acceptable age of a previous check in seconds"
         }
       },
 
@@ -119,6 +143,7 @@ const bazaarDiscovery =
     output: {
 
       example: {
+
         service:
           "FreshGate",
 
@@ -135,10 +160,10 @@ const bazaarDiscovery =
           "base",
 
         url:
-          "https://example.com",
+          "https://example.com/",
 
         final_url:
-          "https://example.com",
+          "https://example.com/",
 
         reachable:
           true,
@@ -150,106 +175,30 @@ const bazaarDiscovery =
           false,
 
         recommendation:
-          "reuse_previous_content",
+          "skip",
 
-        hash:
-          "example-content-hash",
+        source:
+          "remote",
 
         checked_at:
-          0,
+          1789467366,
 
         checks:
           1,
 
         changes:
-          0
-      },
+          0,
 
-      schema: {
-        type:
-          "object",
-
-        properties: {
-
-          service: {
-            type:
-              "string"
-          },
-
-          version: {
-            type:
-              "string"
-          },
-
-          paid: {
-            type:
-              "boolean"
-          },
-
-          price_usdc: {
-            type:
-              "number"
-          },
-
-          network: {
-            type:
-              "string"
-          },
-
-          url: {
-            type:
-              "string"
-          },
-
-          final_url: {
-            type:
-              "string"
-          },
-
-          reachable: {
-            type:
-              "boolean"
-          },
-
-          status: {
-            type:
-              "integer"
-          },
-
-          changed: {},
-
-          recommendation: {
-            type:
-              "string"
-          },
-
-          hash: {
-            type:
-              "string"
-          },
-
-          checked_at: {},
-
-          checks: {},
-
-          changes: {}
-        }
+        hash:
+          "example-content-hash"
       }
     }
   });
 
 
-// --------------------------------------------------
-// HONO
-// --------------------------------------------------
-
-const app =
-  new Hono();
-
-
-// --------------------------------------------------
-// X402 PAID ROUTE
-// --------------------------------------------------
+// ==================================================
+// PAID X402 ROUTE
+// ==================================================
 
 const paidRoutes = {
 
@@ -261,7 +210,7 @@ const paidRoutes = {
           "exact",
 
         price:
-          "$0.001",
+          PRICE,
 
         network:
           NETWORK,
@@ -272,7 +221,7 @@ const paidRoutes = {
     ],
 
     description:
-      "Check whether a public web page changed before fetching it again. Useful for AI agents that want to avoid unnecessary web fetches.",
+      "Pay-per-call web freshness and change detection API for AI agents. Check whether a public web page changed before fetching it again.",
 
     mimeType:
       "application/json",
@@ -290,6 +239,10 @@ const paidRoutes = {
 };
 
 
+// ==================================================
+// PAYMENT MIDDLEWARE
+// ==================================================
+
 app.use(
   paymentMiddleware(
     paidRoutes,
@@ -298,328 +251,9 @@ app.use(
 );
 
 
-// --------------------------------------------------
-// OPENAPI
-// --------------------------------------------------
-
-app.get(
-  "/openapi.json",
-  (c) => {
-
-    return c.json({
-
-      openapi:
-        "3.1.0",
-
-      info: {
-
-        title:
-          "FreshGate",
-
-        version:
-          "0.6.0",
-
-        description:
-          "Pay-per-call web freshness and change detection API for AI agents.",
-
-        "x-guidance":
-          "Use FreshGate before fetching a public URL. It checks whether the page changed so an agent can avoid unnecessary full web fetches."
-      },
-
-      servers: [
-        {
-          url:
-            ORIGIN
-        }
-      ],
-
-      "x-discovery": {
-
-        ownershipProofs: [
-          PAY_TO
-        ]
-      },
-
-      paths: {
-
-        "/api/check-freshness": {
-
-          get: {
-
-            operationId:
-              "checkWebPageFreshness",
-
-            summary:
-              "Check whether a web page changed",
-
-            description:
-              "Use before re-fetching a public URL. Returns status, hash, change state and freshness metadata. Costs $0.001 USDC.",
-
-            tags:
-              TAGS,
-
-            parameters: [
-
-              {
-                name:
-                  "url",
-
-                in:
-                  "query",
-
-                required:
-                  true,
-
-                description:
-                  "Public HTTP or HTTPS URL to check",
-
-                schema: {
-                  type:
-                    "string",
-
-                  format:
-                    "uri"
-                },
-
-                example:
-                  "https://example.com"
-              },
-
-              {
-                name:
-                  "ttl",
-
-                in:
-                  "query",
-
-                required:
-                  false,
-
-                description:
-                  "Maximum acceptable age of a previous check in seconds",
-
-                schema: {
-                  type:
-                    "integer",
-
-                  minimum:
-                    0,
-
-                  maximum:
-                    86400,
-
-                  default:
-                    300
-                }
-              }
-            ],
-
-            "x-payment-info": {
-
-              protocols: [
-                {
-                  x402: {}
-                }
-              ],
-
-              price: {
-
-                mode:
-                  "fixed",
-
-                currency:
-                  "USD",
-
-                amount:
-                  PRICE_USD
-              },
-
-              scheme:
-                "exact",
-
-              network:
-                NETWORK,
-
-              amount:
-                "1000",
-
-              asset:
-                BASE_USDC,
-
-              payTo:
-                PAY_TO,
-
-              maxTimeoutSeconds:
-                60,
-
-              extra: {
-
-                name:
-                  "USDC",
-
-                version:
-                  "2"
-              }
-            },
-
-            responses: {
-
-              "200": {
-
-                description:
-                  "Freshness result",
-
-                content: {
-
-                  "application/json": {
-
-                    schema: {
-
-                      type:
-                        "object",
-
-                      properties: {
-
-                        service: {
-                          type:
-                            "string"
-                        },
-
-                        version: {
-                          type:
-                            "string"
-                        },
-
-                        paid: {
-                          type:
-                            "boolean"
-                        },
-
-                        price_usdc: {
-                          type:
-                            "number"
-                        },
-
-                        network: {
-                          type:
-                            "string"
-                        },
-
-                        url: {
-                          type:
-                            "string"
-                        },
-
-                        final_url: {
-                          type:
-                            "string"
-                        },
-
-                        reachable: {
-                          type:
-                            "boolean"
-                        },
-
-                        status: {
-                          type:
-                            "integer"
-                        },
-
-                        changed: {},
-
-                        recommendation: {
-                          type:
-                            "string"
-                        },
-
-                        hash: {
-                          type:
-                            "string"
-                        },
-
-                        checked_at: {},
-
-                        checks: {},
-
-                        changes: {}
-                      }
-                    }
-                  }
-                }
-              },
-
-              "402": {
-
-                description:
-                  "Payment Required via x402"
-              },
-
-              "400": {
-
-                description:
-                  "Invalid URL"
-              }
-            }
-          }
-        }
-      }
-    });
-  }
-);
-
-
-// --------------------------------------------------
-// X402 DISCOVERY
-// --------------------------------------------------
-
-app.get(
-  "/.well-known/x402",
-  (c) => {
-
-    return c.json({
-
-      version:
-        2,
-
-      resources: [
-
-        {
-          url:
-            `${ORIGIN}/api/check-freshness`,
-
-          method:
-            "GET",
-
-          serviceName:
-            "FreshGate",
-
-          description:
-            "Check whether a public web page changed before fetching it again.",
-
-          tags:
-            TAGS,
-
-          price:
-            "$0.001",
-
-          currency:
-            "USDC",
-
-          network:
-            NETWORK,
-
-          payTo:
-            PAY_TO
-        }
-      ]
-    });
-  }
-);
-
-
-// --------------------------------------------------
+// ==================================================
 // PAID API
-// --------------------------------------------------
+// ==================================================
 
 app.get(
   "/api/check-freshness",
@@ -658,10 +292,10 @@ app.get(
           target
         );
 
+
       if (
         parsed.protocol !==
           "http:" &&
-
         parsed.protocol !==
           "https:"
       ) {
@@ -715,13 +349,28 @@ app.get(
       );
 
 
-    const result =
-      await response.json();
+    let result;
+
+    try {
+
+      result =
+        await response.json();
+
+    } catch {
+
+      return c.json(
+        {
+          error:
+            "FreshGate internal freshness check failed"
+        },
+        502
+      );
+    }
 
 
     return c.json(
-
       {
+
         service:
           "FreshGate",
 
@@ -746,9 +395,292 @@ app.get(
 );
 
 
-// --------------------------------------------------
+// ==================================================
+// WELL KNOWN X402
+// ==================================================
+
+app.get(
+  "/.well-known/x402",
+
+  (c) => {
+
+    return c.json({
+
+      x402Version:
+        2,
+
+      version:
+        2,
+
+      resources: [
+
+        {
+
+          resource:
+            `${ORIGIN}/api/check-freshness`,
+
+          url:
+            `${ORIGIN}/api/check-freshness`,
+
+          method:
+            "GET",
+
+          type:
+            "http",
+
+          serviceName:
+            "FreshGate",
+
+          description:
+            "Pay-per-call web freshness and change detection API for AI agents.",
+
+          mimeType:
+            "application/json",
+
+          tags:
+            TAGS,
+
+          price:
+            PRICE,
+
+          currency:
+            "USDC",
+
+          network:
+            NETWORK,
+
+          scheme:
+            "exact",
+
+          payTo:
+            PAY_TO
+        }
+      ]
+    });
+  }
+);
+
+
+// ==================================================
+// OPENAPI
+// ==================================================
+
+app.get(
+  "/openapi.json",
+
+  (c) => {
+
+    return c.json({
+
+      openapi:
+        "3.1.0",
+
+      info: {
+
+        title:
+          "FreshGate",
+
+        version:
+          "0.6.0",
+
+        description:
+          "Pay-per-call web freshness and change detection API for AI agents."
+      },
+
+      servers: [
+        {
+          url:
+            ORIGIN
+        }
+      ],
+
+      paths: {
+
+        "/api/check-freshness": {
+
+          get: {
+
+            operationId:
+              "checkWebPageFreshness",
+
+            summary:
+              "Check whether a public web page changed",
+
+            description:
+              "Checks whether a URL changed before an AI agent fetches the complete page. Payment: $0.001 USDC via x402 on Base.",
+
+            tags: [
+              "FreshGate"
+            ],
+
+            parameters: [
+
+              {
+
+                name:
+                  "url",
+
+                in:
+                  "query",
+
+                required:
+                  true,
+
+                description:
+                  "Public HTTP or HTTPS URL to check",
+
+                schema: {
+
+                  type:
+                    "string",
+
+                  format:
+                    "uri"
+                },
+
+                example:
+                  "https://example.com"
+              },
+
+              {
+
+                name:
+                  "ttl",
+
+                in:
+                  "query",
+
+                required:
+                  false,
+
+                description:
+                  "Maximum acceptable age of the previous check in seconds",
+
+                schema: {
+
+                  type:
+                    "integer",
+
+                  minimum:
+                    0,
+
+                  maximum:
+                    86400,
+
+                  default:
+                    300
+                }
+              }
+            ],
+
+            responses: {
+
+              "200": {
+
+                description:
+                  "Freshness result returned after successful x402 payment"
+              },
+
+              "400": {
+
+                description:
+                  "Invalid URL or request"
+              },
+
+              "402": {
+
+                description:
+                  "Payment Required via x402"
+              },
+
+              "500": {
+
+                description:
+                  "Internal server error"
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+);
+
+
+// ==================================================
+// HEALTH CHECK
+// ==================================================
+
+app.get(
+  "/api/x402-status",
+
+  (c) => {
+
+    return c.json({
+
+      service:
+        "FreshGate",
+
+      version:
+        "0.6.0",
+
+      x402:
+        true,
+
+      facilitator:
+        "PayAI",
+
+      network:
+        NETWORK,
+
+      price:
+        PRICE,
+
+      payTo:
+        PAY_TO,
+
+      bazaar:
+        true,
+
+      endpoint:
+        `${ORIGIN}/api/check-freshness`,
+
+      status:
+        "online"
+    });
+  }
+);
+
+
+// ==================================================
+// ERROR LOGGING
+// ==================================================
+
+app.onError(
+  (err, c) => {
+
+    console.error(
+      "FreshGate x402 error:",
+      err
+    );
+
+    return c.json(
+      {
+        error:
+          "Internal Server Error",
+
+        component:
+          "FreshGate x402"
+      },
+      500
+    );
+  }
+);
+
+
+// ==================================================
 // MAIN WORKER
-// --------------------------------------------------
+// ==================================================
 
 export default {
 
@@ -766,13 +698,16 @@ export default {
 
     if (
       url.pathname ===
-        "/openapi.json" ||
+        "/api/check-freshness" ||
+
+      url.pathname ===
+        "/api/x402-status" ||
 
       url.pathname ===
         "/.well-known/x402" ||
 
       url.pathname ===
-        "/api/check-freshness"
+        "/openapi.json"
     ) {
 
       return app.fetch(
