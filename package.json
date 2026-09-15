@@ -5,6 +5,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@payai/facilitator": "2.4.4",
     "@x402/core": "2.25.0",
     "@x402/evm": "2.25.0",
     "@x402/extensions": "2.25.0",
