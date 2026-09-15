@@ -1,483 +1,327 @@
-import { Hono } from "hono";
-
-import {
-  paymentMiddleware,
-  x402ResourceServer
-} from "@x402/hono";
-
-import {
-  ExactEvmScheme
-} from "@x402/evm/exact/server";
-
-import {
-  HTTPFacilitatorClient
-} from "@x402/core/server";
-
-import {
-  declareDiscoveryExtension
-} from "@x402/extensions/bazaar";
-
-import {
-  facilitator
-} from "@payai/facilitator";
-
-import v04 from "./worker-v04.js";
-import core from "./worker-v02.js";
-
-
-const PAY_TO =
-  "0xdAFfFEdd9faA96d35b6D70715D073BC11475F25f";
+import v05 from "./worker-v05.js";
 
 const ORIGIN =
   "https://freshgate-api.franktherecensor.workers.dev";
 
-const NETWORK =
-  "eip155:8453";
+const PAID_ENDPOINT =
+  `${ORIGIN}/api/check-freshness`;
 
+const OPENAPI =
+  `${ORIGIN}/openapi.json`;
 
-const facilitatorClient =
-  new HTTPFacilitatorClient(
-    facilitator
+const X402_DISCOVERY =
+  `${ORIGIN}/.well-known/x402`;
+
+const PAY_TO =
+  "0xdAFfFEdd9faA96d35b6D70715D073BC11475F25f";
+
+function textResponse(body, contentType = "text/plain; charset=utf-8") {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "content-type": contentType,
+      "cache-control": "public, max-age=300",
+      "access-control-allow-origin": "*"
+    }
+  });
+}
+
+function jsonResponse(data) {
+  return new Response(
+    JSON.stringify(data, null, 2),
+    {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "public, max-age=300",
+        "access-control-allow-origin": "*"
+      }
+    }
   );
+}
 
-const resourceServer =
-  new x402ResourceServer(
-    facilitatorClient
-  ).register(
-    NETWORK,
-    new ExactEvmScheme()
-  );
-
-
-const app = new Hono();
-
-
-const paidRoutes = {
-  "GET /api/check-freshness": {
-    accepts: [
-      {
-        scheme: "exact",
-        price: "$0.001",
-        network: NETWORK,
-        payTo: PAY_TO
-      }
-    ],
-
-    description:
-      "Check whether a public web page has changed before fetching it again.",
-
-    mimeType:
-      "application/json",
-
-    serviceName:
-      "FreshGate",
-
-    tags: [
-      "web",
-      "freshness",
-      "change-detection",
-      "url-monitoring",
-      "ai-agents"
-    ],
-
-    extensions: {
-      ...declareDiscoveryExtension({
-        input: {
-          url: "https://example.com",
-          ttl: 300
-        },
-
-        inputSchema: {
-          properties: {
-            url: {
-              type: "string",
-              format: "uri",
-              description:
-                "Public HTTP or HTTPS URL to check"
-            },
-
-            ttl: {
-              type: "integer",
-              minimum: 0,
-              maximum: 86400,
-              description:
-                "Maximum acceptable age of a previous check in seconds"
-            }
-          },
-
-          required: [
-            "url"
-          ]
-        },
-
-        output: {
-          example: {
-            service: "FreshGate",
-            version: "0.6",
-            paid: true,
-            price_usdc: 0.001,
-            network: "base",
-            url: "https://example.com/",
-            reachable: true,
-            status: 200,
-            changed: false,
-            recommendation: "skip",
-            source: "remote"
-          },
-
-          schema: {
-            type: "object",
-            properties: {
-              service: {
-                type: "string"
-              },
-
-              version: {
-                type: "string"
-              },
-
-              paid: {
-                type: "boolean"
-              },
-
-              price_usdc: {
-                type: "number"
-              },
-
-              network: {
-                type: "string"
-              },
-
-              url: {
-                type: "string"
-              },
-
-              reachable: {
-                type: "boolean"
-              },
-
-              status: {
-                type: "integer"
-              },
-
-              changed: {
-                type: "boolean"
-              },
-
-              recommendation: {
-                type: "string"
-              }
-            }
-          }
-        }
-      })
-    }
-  }
-};
-
-
-/*
- * IMPORTANTE:
- * middleware applicato come nell'esempio ufficiale PayAI/Hono.
- */
-app.use(
-  paymentMiddleware(
-    paidRoutes,
-    resourceServer
-  )
-);
-
-
-app.get(
-  "/api/check-freshness",
-  async (c) => {
-
-    const target =
-      c.req.query("url");
+function llmsTxt() {
+  return `# FreshGate
 
-    const ttl =
-      c.req.query("ttl") || "300";
-
+> FreshGate is a pay-per-call web freshness and change-detection API designed for AI agents. It helps an agent decide whether a public web page needs to be fetched again.
 
-    if (!target) {
-      return c.json(
-        {
-          error:
-            "Missing url parameter"
-        },
-        400
-      );
-    }
-
+FreshGate uses the x402 payment protocol.
 
-    let parsed;
+Price: $0.001 USDC per paid freshness check.
+Network: Base mainnet.
+Payment scheme: exact.
+Payment recipient: ${PAY_TO}
 
-    try {
-      parsed =
-        new URL(target);
+The main paid endpoint accepts a public HTTP or HTTPS URL and returns freshness and change-detection information.
 
-      if (
-        parsed.protocol !== "http:" &&
-        parsed.protocol !== "https:"
-      ) {
-        throw new Error(
-          "Invalid protocol"
-        );
-      }
-
-    } catch {
+## API
 
-      return c.json(
-        {
-          error:
-            "Invalid URL"
-        },
-        400
-      );
-    }
+- [Paid freshness endpoint](${PAID_ENDPOINT}?url=https%3A%2F%2Fexample.com): Check whether a public web page changed.
+- [OpenAPI specification](${OPENAPI}): Machine-readable API documentation.
+- [x402 discovery metadata](${X402_DISCOVERY}): x402 service and payment metadata.
+- [Extended LLM documentation](${ORIGIN}/llms-full.txt): Detailed usage information.
 
-
-    const internalUrl =
-      new URL(
-        "/fresh",
-        ORIGIN
-      );
+## Usage
 
-    internalUrl.searchParams.set(
-      "url",
-      target
-    );
+Call:
 
-    internalUrl.searchParams.set(
-      "ttl",
-      ttl
-    );
-
+GET ${PAID_ENDPOINT}?url=https%3A%2F%2Fexample.com
 
-    const response =
-      await core.fetch(
-        new Request(
-          internalUrl.toString()
-        ),
-        c.env,
-        c.executionCtx
-      );
+Optional parameter:
 
+ttl = maximum acceptable age of a previous check, in seconds.
 
-    const result =
-      await response.json();
-
+A request without payment returns HTTP 402 Payment Required.
 
-    return c.json(
-      {
-        service:
-          "FreshGate",
-
-        version:
-          "0.6",
+x402-compatible clients should read the payment requirements from the HTTP response and retry with a valid x402 payment.
+`;
+}
 
-        paid:
-          true,
+function llmsFullTxt() {
+  return `# FreshGate
 
-        price_usdc:
-          0.001,
+FreshGate is a lightweight freshness and change-detection service for AI agents.
 
-        network:
-          "base",
-
-        ...result
-      },
+Its purpose is to reduce unnecessary full-page downloads.
 
-      response.status
-    );
-  }
-);
+An agent can use FreshGate before fetching a URL. FreshGate checks the remote resource and returns information that helps the agent determine whether previously cached content can be reused or whether the page should be fetched again.
 
+## Primary endpoint
 
-app.get(
-  "/.well-known/x402",
-  (c) => {
+GET ${PAID_ENDPOINT}
 
-    return c.json({
-      version: 2,
+### Query parameters
 
-      resources: [
-        {
-          url:
-            `${ORIGIN}/api/check-freshness`,
+url
 
-          method:
-            "GET",
+Required.
 
-          serviceName:
-            "FreshGate",
+A public HTTP or HTTPS URL.
 
-          description:
-            "Pay-per-call web freshness and change detection API for AI agents.",
+Example:
 
-          tags: [
-            "web",
-            "freshness",
-            "change-detection",
-            "url-monitoring",
-            "ai-agents"
-          ],
+https://example.com
 
-          price:
-            "$0.001",
-
-          currency:
-            "USDC",
-
-          network:
-            NETWORK,
+ttl
 
-          payTo:
-            PAY_TO
-        }
-      ]
-    });
-  }
-);
-
-
-app.get(
-  "/openapi.json",
-  (c) => {
-
-    return c.json({
-      openapi:
-        "3.1.0",
-
-      info: {
-        title:
-          "FreshGate",
-
-        version:
-          "0.6",
-
-        description:
-          "Pay-per-call web freshness and change detection API for AI agents."
-      },
-
-      servers: [
-        {
-          url:
-            ORIGIN
-        }
-      ],
-
-      paths: {
-        "/api/check-freshness": {
-          get: {
-
-            operationId:
-              "checkWebPageFreshness",
-
-            summary:
-              "Check whether a web page changed",
-
-            description:
-              "Check a public URL before downloading it again. Costs $0.001 USDC.",
-
-            parameters: [
-              {
-                name:
-                  "url",
-
-                in:
-                  "query",
-
-                required:
-                  true,
-
-                schema: {
-                  type:
-                    "string",
-
-                  format:
-                    "uri"
-                }
-              },
-
-              {
-                name:
-                  "ttl",
-
-                in:
-                  "query",
-
-                required:
-                  false,
-
-                schema: {
-                  type:
-                    "integer",
-
-                  default:
-                    300
-                }
-              }
-            ],
-
-            responses: {
-              "200": {
-                description:
-                  "Freshness result"
-              },
-
-              "402": {
-                description:
-                  "Payment Required via x402"
-              },
-
-              "400": {
-                description:
-                  "Invalid request"
-              }
-            }
-          }
-        }
-      }
-    });
-  }
-);
+Optional.
 
+Maximum acceptable age, in seconds, for a previous FreshGate check.
+
+Default:
+
+300
+
+## Example request
+
+${PAID_ENDPOINT}?url=https%3A%2F%2Fexample.com&ttl=300
+
+## Payment
+
+Protocol:
+
+x402
+
+Scheme:
+
+exact
+
+Price:
+
+0.001 USDC
+
+Network:
+
+Base mainnet
+
+CAIP-2 network identifier:
+
+eip155:8453
+
+USDC contract on Base:
+
+0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+
+Payment recipient:
+
+${PAY_TO}
+
+A request without valid payment returns:
+
+HTTP 402 Payment Required
+
+An x402-compatible client should inspect the payment requirements returned by the server, construct the required payment payload, and retry the request.
+
+## Typical response
+
+A successful paid request can contain fields such as:
+
+service
+
+version
+
+paid
+
+price_usdc
+
+network
+
+url
+
+final_url
+
+reachable
+
+status
+
+changed
+
+recommendation
+
+hash
+
+checked_at
+
+checks
+
+changes
+
+## Agent decision model
+
+FreshGate is intended to be called before an expensive or unnecessary full-page retrieval.
+
+Typical workflow:
+
+1. Agent wants content from a URL.
+2. Agent calls FreshGate.
+3. FreshGate determines current page freshness/change state.
+4. If content is unchanged, the agent may reuse cached content.
+5. If content changed, the agent can fetch the page again.
+
+## Machine-readable documentation
+
+OpenAPI:
+
+${OPENAPI}
+
+x402 discovery:
+
+${X402_DISCOVERY}
+
+Short LLM description:
+
+${ORIGIN}/llms.txt
+
+## Service identity
+
+Name:
+
+FreshGate
+
+Category:
+
+Web utility / freshness / change detection
+
+Designed for:
+
+AI agents, autonomous software and machine-to-machine API consumers.
+
+Payment recipient:
+
+${PAY_TO}
+`;
+}
+
+function robotsTxt() {
+  return `User-agent: *
+Allow: /
+
+Sitemap: ${ORIGIN}/sitemap.xml
+`;
+}
+
+function sitemapXml() {
+  const urls = [
+    ORIGIN,
+    `${ORIGIN}/llms.txt`,
+    `${ORIGIN}/llms-full.txt`,
+    `${ORIGIN}/openapi.json`,
+    `${ORIGIN}/.well-known/x402`
+  ];
+
+  const entries = urls
+    .map(
+      url => `  <url>
+    <loc>${url}</loc>
+  </url>`
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${entries}
+</urlset>`;
+}
 
 export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
 
-  async fetch(
-    request,
-    env,
-    ctx
-  ) {
-
-    const url =
-      new URL(
-        request.url
-      );
-
-
-    if (
-      url.pathname ===
-        "/api/check-freshness" ||
-
-      url.pathname ===
-        "/.well-known/x402" ||
-
-      url.pathname ===
-        "/openapi.json"
-    ) {
-
-      return app.fetch(
-        request,
-        env,
-        ctx
+    if (url.pathname === "/llms.txt") {
+      return textResponse(
+        llmsTxt(),
+        "text/markdown; charset=utf-8"
       );
     }
 
+    if (url.pathname === "/llms-full.txt") {
+      return textResponse(
+        llmsFullTxt(),
+        "text/markdown; charset=utf-8"
+      );
+    }
 
-    return v04.fetch(
+    if (url.pathname === "/robots.txt") {
+      return textResponse(
+        robotsTxt(),
+        "text/plain; charset=utf-8"
+      );
+    }
+
+    if (url.pathname === "/sitemap.xml") {
+      return textResponse(
+        sitemapXml(),
+        "application/xml; charset=utf-8"
+      );
+    }
+
+    if (url.pathname === "/discovery.json") {
+      return jsonResponse({
+        serviceName: "FreshGate",
+        description:
+          "Pay-per-call web freshness and change detection API for AI agents.",
+        endpoint: PAID_ENDPOINT,
+        openapi: OPENAPI,
+        x402: X402_DISCOVERY,
+        llms: `${ORIGIN}/llms.txt`,
+        price: {
+          amount: "0.001",
+          currency: "USDC",
+          network: "eip155:8453",
+          scheme: "exact"
+        },
+        payTo: PAY_TO,
+        tags: [
+          "web",
+          "freshness",
+          "change-detection",
+          "url-monitoring",
+          "ai-agents"
+        ]
+      });
+    }
+
+    return v05.fetch(
       request,
       env,
       ctx
