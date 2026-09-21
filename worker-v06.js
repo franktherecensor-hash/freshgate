@@ -33,9 +33,8 @@ const REQUIREMENT = {
   maxTimeoutSeconds: 60,
 
   extra: {
-    name: "USDC",
-    version: "2",
-    facilitator: FACILITATOR
+    name: "USD Coin",
+    version: "2"
   }
 };
 
@@ -58,7 +57,7 @@ const BAZAAR = {
 
         example: {
           service: "FreshGate",
-          version: "0.7.0",
+          version: "0.7.1",
           paid: true,
           price_usdc: 0.001,
           network: "base",
@@ -69,6 +68,84 @@ const BAZAAR = {
           recommendation: "skip"
         }
       }
+    },
+
+    schema: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+
+      properties: {
+        input: {
+          type: "object",
+
+          properties: {
+            type: {
+              type: "string",
+              const: "http"
+            },
+
+            method: {
+              type: "string",
+              const: "GET"
+            },
+
+            queryParams: {
+              type: "object",
+
+              properties: {
+                url: {
+                  type: "string",
+                  format: "uri",
+                  description:
+                    "Public HTTP or HTTPS URL to check for freshness and changes."
+                },
+
+                ttl: {
+                  type: "string",
+                  pattern: "^[0-9]+$",
+                  description:
+                    "Cache TTL in seconds."
+                }
+              },
+
+              required: [
+                "url"
+              ]
+            }
+          },
+
+          required: [
+            "type",
+            "method",
+            "queryParams"
+          ]
+        },
+
+        output: {
+          type: "object",
+
+          properties: {
+            type: {
+              type: "string",
+              const: "json"
+            },
+
+            example: {
+              type: "object"
+            }
+          },
+
+          required: [
+            "type",
+            "example"
+          ]
+        }
+      },
+
+      required: [
+        "input",
+        "output"
+      ]
     }
   }
 };
@@ -176,6 +253,59 @@ function decodeBase64JSON(value) {
 }
 
 
+function sameAddress(a, b) {
+  return (
+    typeof a === "string" &&
+    typeof b === "string" &&
+    a.toLowerCase() === b.toLowerCase()
+  );
+}
+
+
+function acceptedRequirementIsValid(accepted) {
+  if (!accepted) {
+    return false;
+  }
+
+  return (
+    accepted.scheme === REQUIREMENT.scheme &&
+    accepted.network === REQUIREMENT.network &&
+    accepted.amount === REQUIREMENT.amount &&
+    sameAddress(
+      accepted.asset,
+      REQUIREMENT.asset
+    ) &&
+    sameAddress(
+      accepted.payTo,
+      REQUIREMENT.payTo
+    ) &&
+    accepted.maxTimeoutSeconds ===
+      REQUIREMENT.maxTimeoutSeconds
+  );
+}
+
+
+function canonicalPaymentPayload(
+  paymentPayload
+) {
+  const challenge =
+    paymentRequiredObject();
+
+  return {
+    ...paymentPayload,
+
+    resource:
+      challenge.resource,
+
+    extensions: {
+      ...(paymentPayload?.extensions || {}),
+      bazaar:
+        BAZAAR.bazaar
+    }
+  };
+}
+
+
 function corsHeaders() {
   return {
     "access-control-allow-origin":
@@ -237,6 +367,7 @@ function textResponse(
 
       headers: {
         ...corsHeaders(),
+
         "content-type":
           contentType
       }
@@ -441,7 +572,6 @@ async function handlePaidRequest(
   }
 
 
-  // x402 v2
   const paymentHeader =
     request.headers.get(
       "PAYMENT-SIGNATURE"
@@ -481,21 +611,22 @@ async function handlePaidRequest(
 
 
   if (
-    paymentPayload?.scheme !==
-      "exact" ||
-    paymentPayload?.network !==
-      NETWORK
+    !acceptedRequirementIsValid(
+      paymentPayload?.accepted
+    )
   ) {
     return paymentRequiredResponse(
       request,
-      "Unsupported payment scheme or network"
+      "Payment requirements do not match FreshGate"
     );
   }
 
 
-  // -------------------------
-  // VERIFY PAYMENT
-  // -------------------------
+  paymentPayload =
+    canonicalPaymentPayload(
+      paymentPayload
+    );
+
 
   let verify;
 
@@ -532,10 +663,6 @@ async function handlePaidRequest(
     );
   }
 
-
-  // -------------------------
-  // EXECUTE FRESHGATE
-  // -------------------------
 
   const internalUrl =
     new URL(
@@ -606,10 +733,6 @@ async function handlePaidRequest(
     );
   }
 
-
-  // -------------------------
-  // SETTLE PAYMENT
-  // -------------------------
 
   let settlement;
 
@@ -684,7 +807,7 @@ async function handlePaidRequest(
         "FreshGate",
 
       version:
-        "0.7.0",
+        "0.7.1",
 
       paid:
         true,
@@ -700,6 +823,98 @@ async function handlePaidRequest(
     200,
     responseHeaders
   );
+}
+
+
+async function bazaarStatus() {
+  const discoveryUrl =
+    `${FACILITATOR}/discovery/resources?payTo=${encodeURIComponent(PAY_TO)}&limit=100`;
+
+  try {
+    const response =
+      await fetch(
+        discoveryUrl,
+        {
+          headers: {
+            accept:
+              "application/json"
+          }
+        }
+      );
+
+    const data =
+      await response.json();
+
+    const items =
+      Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data?.resources)
+          ? data.resources
+          : [];
+
+    const matches =
+      items.filter(
+        (item) =>
+          item?.resource === ENDPOINT ||
+          item?.resource?.url === ENDPOINT
+      );
+
+    return {
+      service:
+        "FreshGate",
+
+      version:
+        "0.7.1",
+
+      endpoint:
+        ENDPOINT,
+
+      payTo:
+        PAY_TO,
+
+      facilitator:
+        FACILITATOR,
+
+      discoveryHttpStatus:
+        response.status,
+
+      listed:
+        matches.length > 0,
+
+      matches,
+
+      totalForWallet:
+        data?.total ??
+        data?.pagination?.total ??
+        items.length
+    };
+
+  } catch (error) {
+    return {
+      service:
+        "FreshGate",
+
+      version:
+        "0.7.1",
+
+      endpoint:
+        ENDPOINT,
+
+      payTo:
+        PAY_TO,
+
+      facilitator:
+        FACILITATOR,
+
+      listed:
+        false,
+
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unable to query PayAI discovery"
+    };
+  }
 }
 
 
@@ -768,7 +983,7 @@ function openApi() {
         "FreshGate",
 
       version:
-        "0.7.0",
+        "0.7.1",
 
       description:
         "Pay-per-call web freshness and change detection API for AI agents."
@@ -858,6 +1073,7 @@ export default {
         null,
         {
           status: 204,
+
           headers:
             corsHeaders()
         }
@@ -969,6 +1185,16 @@ ${ORIGIN}/.well-known/x402
 
     if (
       url.pathname ===
+      "/api/bazaar-status"
+    ) {
+      return jsonResponse(
+        await bazaarStatus()
+      );
+    }
+
+
+    if (
+      url.pathname ===
       "/api/x402-status"
     ) {
       return jsonResponse({
@@ -976,7 +1202,7 @@ ${ORIGIN}/.well-known/x402
           "FreshGate",
 
         version:
-          "0.7.0",
+          "0.7.1",
 
         status:
           "online",
